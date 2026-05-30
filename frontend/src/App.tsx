@@ -1,121 +1,45 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { RiPieChart2Fill } from "react-icons/ri";
+import { IoCartOutline } from "react-icons/io5";
+import { IoAlertCircleOutline } from "react-icons/io5";
+import { PiGearLight } from "react-icons/pi";
+import { CiLogout } from "react-icons/ci";
 
 function App() {
-  const [count, setCount] = useState(0)
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div id="dashboard" className="flex flex-row items-center justify-center gap-4">
+      <section id="menu" className="flex flex-col items-center justify-between gap-4 w-1/4 h-screen bg-gray-50 py-8 px-8 text-gray-700">
+        <h1 className="text-2xl font-bold">GEESNA</h1>
+        <div className="flex flex-col gap-8 w-full">
+          <button className="py-2 px-4 bg-blue-500 text-white rounded-lg w-full flex items-center gap-4">
+            <RiPieChart2Fill size={20} className="m-4" />
+            <span>Dashboard</span>
+          </button>
+          <button className="py-2 px-4 w-full flex items-center gap-4">
+            <IoCartOutline size={20} className="m-4" />
+            <span>Orders</span>
+          </button>
+          <button className="py-2 px-4  rounded w-full flex items-center gap-4">
+            <IoAlertCircleOutline size={20} className="m-4" />
+            <span>Alerts</span>
+          </button>
+          <button className="py-2 px-4 rounded w-full flex items-center gap-4">
+            <PiGearLight size={20} className="m-4" />
+            <span>Settings</span>
+          </button>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
+        <button className="py-2 px-4 rounded w-full flex items-center gap-4">
+          <CiLogout size={20} className="m-4" />
+          <span>Sign Out</span>
         </button>
       </section>
 
-      <div className="ticks"></div>
+      <div className="grow">
+        <h2>Dashboard</h2>
+      </div>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    </div>
   )
 }
 
