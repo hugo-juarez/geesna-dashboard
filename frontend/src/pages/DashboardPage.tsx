@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { IoAlertCircle, IoWarningOutline } from "react-icons/io5";
 import {
   ResponsiveContainer,
   BarChart,
@@ -18,11 +19,15 @@ import {
 
 import {
   fetchDashboardData,
+  saldo,
+  pagoEstado,
+  pagoEnRiesgo,
   SEMAFORO_COLORS,
-  ESTADO_COLORS,
+  PAGO_COLORS,
   type DashboardData,
   type Order,
   type Semaforo,
+  type PagoEstado,
 } from "../data/dashboard";
 
 const currency = (n: number) =>
@@ -75,6 +80,66 @@ const SEMAFORO_BADGE: Record<Semaforo, string> = {
   GRIS: "bg-gray-100 text-gray-600",
 };
 
+const PAGO_BADGE: Record<PagoEstado, string> = {
+  "SIN PAGO": "bg-red-100 text-red-700",
+  PARCIAL: "bg-amber-100 text-amber-700",
+  PAGADO: "bg-green-100 text-green-700",
+};
+
+// Banner que resalta las órdenes en marcha sin pago registrado.
+function PaymentAlert({
+  alertas,
+  montoEnRiesgo,
+}: {
+  alertas: Order[];
+  montoEnRiesgo: number;
+}) {
+  if (alertas.length === 0) {
+    return (
+      <div className="rounded-xl border border-green-200 bg-green-50 p-5 flex items-center gap-3">
+        <IoAlertCircle className="text-green-600 shrink-0" size={22} />
+        <p className="text-sm text-green-800">
+          Todas las órdenes en marcha tienen al menos un pago registrado.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+      <div className="flex items-center gap-3">
+        <IoWarningOutline className="text-red-600 shrink-0" size={22} />
+        <div>
+          <h2 className="font-semibold text-red-800">
+            {alertas.length} órdenes en marcha sin pago registrado
+          </h2>
+          <p className="text-sm text-red-700">
+            {currency(montoEnRiesgo)} comprometidos con proveedores sin haber
+            recibido pago. Revisar antes de que avancen más.
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {alertas.map((o) => (
+          <div
+            key={o.id}
+            className="flex items-center justify-between rounded-lg bg-white border border-red-100 px-3 py-2"
+          >
+            <div className="min-w-0">
+              <p className="font-medium text-gray-900 truncate">{o.id}</p>
+              <p className="text-xs text-gray-500 truncate">
+                {o.proveedor} · {o.etapaActual}
+              </p>
+            </div>
+            <span className="ml-3 shrink-0 font-semibold text-red-700 tabular-nums">
+              {currency(o.monto)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function OrdersTable({ orders }: { orders: Order[] }) {
   return (
     <div className="overflow-x-auto">
@@ -83,43 +148,68 @@ function OrdersTable({ orders }: { orders: Order[] }) {
           <tr>
             <th className="py-2 pr-4">Orden ID</th>
             <th className="py-2 pr-4">Proveedor</th>
-            <th className="py-2 pr-4">Producto</th>
             <th className="py-2 pr-4 text-right">Monto</th>
+            <th className="py-2 pr-4 text-right">Pagado</th>
+            <th className="py-2 pr-4 text-right">Saldo</th>
+            <th className="py-2 pr-4">Pago</th>
             <th className="py-2 pr-4">Etapa actual</th>
-            <th className="py-2 pr-4">Estado</th>
             <th className="py-2 pr-4 text-right">Avance</th>
-            <th className="py-2 pr-4">ETA bodega</th>
             <th className="py-2">Semáforo</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {orders.map((o) => (
-            <tr key={o.id} className="hover:bg-gray-50">
-              <td className="py-2 pr-4 font-medium text-gray-900">{o.id}</td>
-              <td className="py-2 pr-4 text-gray-600">{o.proveedor}</td>
-              <td className="py-2 pr-4 text-gray-600">{o.productoSku || "—"}</td>
-              <td className="py-2 pr-4 text-right tabular-nums text-gray-700">
-                {o.monto ? currency(o.monto) : "—"}
-              </td>
-              <td className="py-2 pr-4 text-gray-600">{o.etapaActual}</td>
-              <td className="py-2 pr-4 text-gray-600">{o.estado}</td>
-              <td className="py-2 pr-4 text-right tabular-nums text-gray-700">
-                {percent(o.avance)}
-              </td>
-              <td className="py-2 pr-4 text-gray-600">
-                {o.etaBodega
-                  ? new Date(o.etaBodega).toLocaleDateString("es-MX")
-                  : "—"}
-              </td>
-              <td className="py-2">
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${SEMAFORO_BADGE[o.semaforo]}`}
-                >
-                  {o.semaforo}
-                </span>
-              </td>
-            </tr>
-          ))}
+          {orders.map((o) => {
+            const enRiesgo = pagoEnRiesgo(o);
+            const ep = pagoEstado(o);
+            return (
+              <tr
+                key={o.id}
+                className={enRiesgo ? "bg-red-50/60 hover:bg-red-50" : "hover:bg-gray-50"}
+              >
+                <td className="py-2 pr-4 font-medium text-gray-900">
+                  {enRiesgo && (
+                    <IoWarningOutline
+                      className="inline mr-1 text-red-500 align-text-bottom"
+                      size={15}
+                    />
+                  )}
+                  {o.id}
+                </td>
+                <td className="py-2 pr-4 text-gray-600">{o.proveedor}</td>
+                <td className="py-2 pr-4 text-right tabular-nums text-gray-700">
+                  {o.monto ? currency(o.monto) : "—"}
+                </td>
+                <td className="py-2 pr-4 text-right tabular-nums text-gray-700">
+                  {o.monto ? currency(o.montoPagado) : "—"}
+                </td>
+                <td className="py-2 pr-4 text-right tabular-nums text-gray-700">
+                  {o.monto ? currency(saldo(o)) : "—"}
+                </td>
+                <td className="py-2 pr-4">
+                  {o.monto ? (
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${PAGO_BADGE[ep]}`}
+                    >
+                      {ep}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td className="py-2 pr-4 text-gray-600">{o.etapaActual}</td>
+                <td className="py-2 pr-4 text-right tabular-nums text-gray-700">
+                  {percent(o.avance)}
+                </td>
+                <td className="py-2">
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${SEMAFORO_BADGE[o.semaforo]}`}
+                  >
+                    {o.semaforo}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -141,9 +231,17 @@ export default function DashboardPage() {
     );
   }
 
-  const { kpis, porProveedor, porSemaforo, porEstado, funnel, orders } = data;
+  const {
+    kpis,
+    porProveedor,
+    pagoPorProveedor,
+    porSemaforo,
+    porPagoEstado,
+    funnel,
+    orders,
+    alertasPago,
+  } = data;
 
-  // Embudo con color por profundidad (de azul intenso a claro).
   const funnelColors = ["#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#93c5fd", "#bfdbfe", "#dbeafe", "#eff6ff"];
 
   return (
@@ -152,37 +250,87 @@ export default function DashboardPage() {
         <header>
           <h1 className="text-3xl font-bold text-gray-900">Dashboard General</h1>
           <p className="text-gray-500">
-            Órdenes a proveedores · {kpis.ordenesTotales} órdenes activas
+            Órdenes a proveedores · {kpis.ordenesTotales} órdenes en total
           </p>
         </header>
+
+        {/* Alerta principal: pagos pendientes */}
+        <PaymentAlert
+          alertas={alertasPago}
+          montoEnRiesgo={kpis.montoEnRiesgo}
+        />
 
         {/* KPI cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard label="Órdenes totales" value={String(kpis.ordenesTotales)} />
+          <KpiCard label="Monto total" value={currency(kpis.montoTotal)} />
           <KpiCard
-            label="Monto total"
-            value={currency(kpis.montoTotal)}
-            sub={`Caja comprometida ${currency(kpis.cajaComprometida)}`}
+            label="Saldo pendiente"
+            value={currency(kpis.saldoPendiente)}
+            accent="text-amber-600"
+            sub="Por cobrar / pagar"
           />
           <KpiCard
-            label="Órdenes en rojo"
-            value={String(kpis.ordenesEnRojo)}
+            label="Pagos en riesgo"
+            value={String(kpis.ordenesSinPago)}
             accent="text-red-600"
-            sub="Vencidas vs. ETA bodega"
-          />
-          <KpiCard
-            label="% avance promedio"
-            value={percent(kpis.avancePromedio)}
-            sub={`${kpis.ordenesCompletas} completas · ${kpis.ordenesActivas} activas`}
+            sub={`${currency(kpis.montoEnRiesgo)} sin pago`}
           />
         </div>
 
-        {/* Charts row 1 */}
+        {/* Charts row 1 — foco en pagos */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-2">
             <h2 className="font-semibold text-gray-800 mb-4">
-              Monto por proveedor
+              Pagado vs. saldo por proveedor
             </h2>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={pagoPorProveedor} margin={{ left: 10, right: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="proveedor" tickLine={false} />
+                <YAxis
+                  tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip
+                  formatter={(v) => currency(Number(v))}
+                  cursor={{ fill: "rgba(0,0,0,0.04)" }}
+                />
+                <Legend />
+                <Bar dataKey="pagado" name="Pagado" stackId="a" fill="#22c55e" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="saldo" name="Saldo" stackId="a" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+
+          <Card>
+            <h2 className="font-semibold text-gray-800 mb-4">Estado de pago</h2>
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie
+                  data={porPagoEstado}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius="55%"
+                  outerRadius="80%"
+                  paddingAngle={2}
+                >
+                  {porPagoEstado.map((s) => (
+                    <Cell key={s.name} fill={PAGO_COLORS[s.name]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </Card>
+        </div>
+
+        {/* Charts row 2 — operación */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Card>
+            <h2 className="font-semibold text-gray-800 mb-4">Monto por proveedor</h2>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={porProveedor} margin={{ left: 10, right: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -202,9 +350,7 @@ export default function DashboardPage() {
           </Card>
 
           <Card>
-            <h2 className="font-semibold text-gray-800 mb-4">
-              Órdenes por semáforo
-            </h2>
+            <h2 className="font-semibold text-gray-800 mb-4">Órdenes por semáforo</h2>
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
                 <Pie
@@ -224,39 +370,11 @@ export default function DashboardPage() {
               </PieChart>
             </ResponsiveContainer>
           </Card>
-        </div>
 
-        {/* Charts row 2 */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card>
-            <h2 className="font-semibold text-gray-800 mb-4">
-              Órdenes por estado
-            </h2>
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie
-                  data={porEstado}
-                  dataKey="value"
-                  nameKey="name"
-                  outerRadius="80%"
-                  label
-                >
-                  {porEstado.map((s) => (
-                    <Cell key={s.name} fill={ESTADO_COLORS[s.name]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </Card>
-
-          <Card className="lg:col-span-2">
-            <h2 className="font-semibold text-gray-800 mb-1">
-              Embudo de avance por hito
-            </h2>
+            <h2 className="font-semibold text-gray-800 mb-1">Avance por hito</h2>
             <p className="text-xs text-gray-400 mb-4">
-              Órdenes que han alcanzado cada etapa del proceso
+              Órdenes que alcanzaron cada etapa
             </p>
             <ResponsiveContainer width="100%" height={280}>
               <FunnelChart>
@@ -270,14 +388,7 @@ export default function DashboardPage() {
                     dataKey="etapa"
                     fill="#374151"
                     stroke="none"
-                    fontSize={12}
-                  />
-                  <LabelList
-                    position="left"
-                    dataKey="ordenes"
-                    fill="#374151"
-                    stroke="none"
-                    fontSize={12}
+                    fontSize={11}
                   />
                 </Funnel>
               </FunnelChart>

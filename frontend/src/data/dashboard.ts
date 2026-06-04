@@ -12,6 +12,9 @@ export type EstadoOrden =
   | "PAGADA / EN ESPERA"
   | "COMPLETA";
 
+// Estado de pago derivado del monto pagado vs. el monto de la orden.
+export type PagoEstado = "SIN PAGO" | "PARCIAL" | "PAGADO";
+
 // Hitos del proceso, en orden. La orden avanza de izquierda a derecha.
 export const ETAPAS = [
   "Cotizar",
@@ -33,7 +36,7 @@ export interface Order {
   contenedor: string;
   responsable: string;
   monto: number;
-  anticipo: number;
+  montoPagado: number; // total cobrado al cliente / pagado al proveedor
   etaPuertoMx: string | null; // ISO date
   etaBodega: string | null; // ISO date
   etapaActual: Etapa;
@@ -58,7 +61,9 @@ export interface DashboardData {
     ordenesActivas: number;
     ordenesEnRojo: number;
     avancePromedio: number; // 0..1
-    cajaComprometida: number; // monto - anticipos pagados
+    saldoPendiente: number; // suma de saldos por cobrar/pagar
+    ordenesSinPago: number; // órdenes en marcha SIN pago registrado
+    montoEnRiesgo: number; // monto de esas órdenes
   };
   porProveedor: {
     proveedor: string;
@@ -66,9 +71,16 @@ export interface DashboardData {
     monto: number;
     enRojo: number;
   }[];
+  pagoPorProveedor: {
+    proveedor: string;
+    pagado: number;
+    saldo: number;
+  }[];
   porSemaforo: { name: Semaforo; value: number }[];
-  porEstado: { name: EstadoOrden; value: number }[];
+  porPagoEstado: { name: PagoEstado; value: number }[];
   funnel: { etapa: string; ordenes: number }[];
+  // Órdenes en marcha sin pago registrado — el riesgo principal a vigilar.
+  alertasPago: Order[];
 }
 
 // --- Colores compartidos (también los usa el dashboard) ---
@@ -79,17 +91,34 @@ export const SEMAFORO_COLORS: Record<Semaforo, string> = {
   GRIS: "#9ca3af",
 };
 
-export const ESTADO_COLORS: Record<EstadoOrden, string> = {
-  "EN GESTIÓN": "#60a5fa",
-  "EN PRODUCCIÓN": "#a78bfa",
-  "PAGADA / EN ESPERA": "#fbbf24",
-  COMPLETA: "#34d399",
+export const PAGO_COLORS: Record<PagoEstado, string> = {
+  "SIN PAGO": "#ef4444",
+  PARCIAL: "#f59e0b",
+  PAGADO: "#22c55e",
 };
 
 // Índice de etapa: 0 = Sin iniciar, 1..8 = hitos.
 export function etapaIndex(e: Etapa): number {
   if (e === "Sin iniciar") return 0;
   return ETAPAS.indexOf(e) + 1;
+}
+
+// --- Helpers de pago ---
+export function saldo(o: Order): number {
+  return Math.max(o.monto - o.montoPagado, 0);
+}
+
+export function pagoEstado(o: Order): PagoEstado {
+  if (o.montoPagado <= 0) return "SIN PAGO";
+  if (o.montoPagado >= o.monto) return "PAGADO";
+  return "PARCIAL";
+}
+
+// Riesgo de pago: la orden ya está en marcha (aprobada o más avanzada) y tiene
+// monto, pero NO se ha registrado ningún pago. Es el caso que el equipo suele
+// dejar pasar y el que el dashboard debe resaltar.
+export function pagoEnRiesgo(o: Order): boolean {
+  return o.monto > 0 && o.montoPagado === 0 && etapaIndex(o.etapaActual) >= 2;
 }
 
 // --- Datos simulados (de las hojas FINE CREATIONS y CANPY LINA) ---
@@ -107,7 +136,7 @@ const ORDERS: Order[] = [
     contenedor: "MSCU1234",
     responsable: "Gerardo",
     monto: 50000,
-    anticipo: 10000,
+    montoPagado: 10000, // anticipo
     etaPuertoMx: "2026-05-04",
     etaBodega: "2026-05-05",
     etapaActual: "Producción OK",
@@ -123,7 +152,7 @@ const ORDERS: Order[] = [
     contenedor: "MSCU1235",
     responsable: "Gerardo",
     monto: 70000,
-    anticipo: 0,
+    montoPagado: 0, // ⚠️ aprobada pero sin pago
     etaPuertoMx: "2026-05-05",
     etaBodega: "2026-05-23",
     etapaActual: "Aprobar",
@@ -139,7 +168,7 @@ const ORDERS: Order[] = [
     contenedor: "MSCU1236",
     responsable: "Gerardo",
     monto: 70000,
-    anticipo: 0,
+    montoPagado: 35000, // entregada con saldo pendiente
     etaPuertoMx: "2026-05-15",
     etaBodega: "2026-07-18",
     etapaActual: "Llega bodega",
@@ -155,7 +184,7 @@ const ORDERS: Order[] = [
     contenedor: "MSCU1237",
     responsable: "Gerardo",
     monto: 90000,
-    anticipo: 0,
+    montoPagado: 90000,
     etaPuertoMx: "2026-05-16",
     etaBodega: "2026-07-19",
     etapaActual: "Llega bodega",
@@ -171,7 +200,7 @@ const ORDERS: Order[] = [
     contenedor: "MSCU1238",
     responsable: "",
     monto: 110000,
-    anticipo: 0,
+    montoPagado: 0, // sin iniciar — aún no es riesgo
     etaPuertoMx: "2026-05-17",
     etaBodega: "2026-07-20",
     etapaActual: "Sin iniciar",
@@ -187,7 +216,7 @@ const ORDERS: Order[] = [
     contenedor: "",
     responsable: "",
     monto: 0,
-    anticipo: 0,
+    montoPagado: 0,
     etaPuertoMx: null,
     etaBodega: null,
     etapaActual: "Sin iniciar",
@@ -205,7 +234,7 @@ const ORDERS: Order[] = [
     contenedor: "TCLU9134729",
     responsable: "",
     monto: 13590,
-    anticipo: 0,
+    montoPagado: 13590,
     etaPuertoMx: "2026-01-15",
     etaBodega: "2026-01-30",
     etapaActual: "Llega bodega",
@@ -221,7 +250,7 @@ const ORDERS: Order[] = [
     contenedor: "MSNU7986327",
     responsable: "",
     monto: 12240,
-    anticipo: 0,
+    montoPagado: 0, // ⚠️ en producción sin pago
     etaPuertoMx: null,
     etaBodega: null,
     etapaActual: "Producción OK",
@@ -237,7 +266,7 @@ const ORDERS: Order[] = [
     contenedor: "TIIU4416290",
     responsable: "",
     monto: 21276.4,
-    anticipo: 0,
+    montoPagado: 6000,
     etaPuertoMx: null,
     etaBodega: null,
     etapaActual: "Producción OK",
@@ -253,7 +282,7 @@ const ORDERS: Order[] = [
     contenedor: "MSBU5256338",
     responsable: "",
     monto: 14693.8,
-    anticipo: 0,
+    montoPagado: 7000,
     etaPuertoMx: null,
     etaBodega: null,
     etapaActual: "Anticipo",
@@ -269,7 +298,7 @@ const ORDERS: Order[] = [
     contenedor: "MEDU4653752",
     responsable: "",
     monto: 14031,
-    anticipo: 0,
+    montoPagado: 7000,
     etaPuertoMx: null,
     etaBodega: null,
     etapaActual: "Anticipo",
@@ -285,7 +314,7 @@ const ORDERS: Order[] = [
     contenedor: "MSNU5184549",
     responsable: "",
     monto: 11977.8,
-    anticipo: 0,
+    montoPagado: 0, // ⚠️ info empaque sin pago
     etaPuertoMx: null,
     etaBodega: null,
     etapaActual: "Info empaque",
@@ -301,7 +330,7 @@ const ORDERS: Order[] = [
     contenedor: "MSMU6514615",
     responsable: "",
     monto: 12983.7,
-    anticipo: 0,
+    montoPagado: 0, // ⚠️ aprobada sin pago
     etaPuertoMx: null,
     etaBodega: null,
     etapaActual: "Aprobar",
@@ -317,7 +346,7 @@ const ORDERS: Order[] = [
     contenedor: "",
     responsable: "",
     monto: 0,
-    anticipo: 0,
+    montoPagado: 0,
     etaPuertoMx: null,
     etaBodega: null,
     etapaActual: "Sin iniciar",
@@ -333,7 +362,7 @@ const ORDERS: Order[] = [
     contenedor: "",
     responsable: "",
     monto: 0,
-    anticipo: 0,
+    montoPagado: 0,
     etaPuertoMx: null,
     etaBodega: null,
     etapaActual: "Sin iniciar",
@@ -349,7 +378,7 @@ const ORDERS: Order[] = [
     contenedor: "",
     responsable: "",
     monto: 0,
-    anticipo: 0,
+    montoPagado: 0,
     etaPuertoMx: null,
     etaBodega: null,
     etapaActual: "Sin iniciar",
@@ -365,7 +394,7 @@ const ORDERS: Order[] = [
     contenedor: "",
     responsable: "",
     monto: 0,
-    anticipo: 0,
+    montoPagado: 0,
     etaPuertoMx: null,
     etaBodega: null,
     etapaActual: "Sin iniciar",
@@ -382,11 +411,17 @@ function buildDashboard(orders: Order[], providers: Provider[]): DashboardData {
   const ordenesCompletas = orders.filter((o) => o.estado === "COMPLETA").length;
   const ordenesEnRojo = orders.filter((o) => o.semaforo === "ROJO").length;
   const ordenesActivas = orders.filter((o) => o.estado !== "COMPLETA").length;
-  const cajaComprometida = orders.reduce((s, o) => s + (o.monto - o.anticipo), 0);
+  const saldoPendiente = orders.reduce((s, o) => s + saldo(o), 0);
   const avancePromedio =
     orders.length === 0
       ? 0
       : orders.reduce((s, o) => s + o.avance, 0) / orders.length;
+
+  const alertasPago = orders
+    .filter(pagoEnRiesgo)
+    .sort((a, b) => b.monto - a.monto);
+  const ordenesSinPago = alertasPago.length;
+  const montoEnRiesgo = alertasPago.reduce((s, o) => s + o.monto, 0);
 
   const porProveedor = providers.map((p) => {
     const os = orders.filter((o) => o.proveedor === p.nombre);
@@ -398,6 +433,15 @@ function buildDashboard(orders: Order[], providers: Provider[]): DashboardData {
     };
   });
 
+  const pagoPorProveedor = providers.map((p) => {
+    const os = orders.filter((o) => o.proveedor === p.nombre);
+    return {
+      proveedor: p.nombre,
+      pagado: os.reduce((s, o) => s + o.montoPagado, 0),
+      saldo: os.reduce((s, o) => s + saldo(o), 0),
+    };
+  });
+
   const semaforos: Semaforo[] = ["ROJO", "AMARILLO", "VERDE", "GRIS"];
   const porSemaforo = semaforos
     .map((name) => ({
@@ -406,16 +450,13 @@ function buildDashboard(orders: Order[], providers: Provider[]): DashboardData {
     }))
     .filter((s) => s.value > 0);
 
-  const estados: EstadoOrden[] = [
-    "EN GESTIÓN",
-    "EN PRODUCCIÓN",
-    "PAGADA / EN ESPERA",
-    "COMPLETA",
-  ];
-  const porEstado = estados
+  // Estado de pago sólo para órdenes con monto (las vacías no aplican).
+  const conMonto = orders.filter((o) => o.monto > 0);
+  const pagoEstados: PagoEstado[] = ["SIN PAGO", "PARCIAL", "PAGADO"];
+  const porPagoEstado = pagoEstados
     .map((name) => ({
       name,
-      value: orders.filter((o) => o.estado === name).length,
+      value: conMonto.filter((o) => pagoEstado(o) === name).length,
     }))
     .filter((s) => s.value > 0);
 
@@ -435,12 +476,16 @@ function buildDashboard(orders: Order[], providers: Provider[]): DashboardData {
       ordenesActivas,
       ordenesEnRojo,
       avancePromedio,
-      cajaComprometida,
+      saldoPendiente,
+      ordenesSinPago,
+      montoEnRiesgo,
     },
     porProveedor,
+    pagoPorProveedor,
     porSemaforo,
-    porEstado,
+    porPagoEstado,
     funnel,
+    alertasPago,
   };
 }
 
