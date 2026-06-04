@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { IoAlertCircle, IoWarningOutline } from "react-icons/io5";
+import { IoAlertCircle, IoWarningOutline, IoBoatOutline } from "react-icons/io5";
 import {
   ResponsiveContainer,
   BarChart,
@@ -18,17 +17,17 @@ import {
 } from "recharts";
 
 import {
-  fetchDashboardData,
   saldo,
   pagoEstado,
   pagoEnRiesgo,
   SEMAFORO_COLORS,
   PAGO_COLORS,
-  type DashboardData,
   type Order,
   type Semaforo,
   type PagoEstado,
+  type Tracking,
 } from "../data/dashboard";
+import { useOrders } from "../store/OrdersContext";
 
 const currency = (n: number) =>
   n.toLocaleString("es-MX", {
@@ -216,14 +215,102 @@ function OrdersTable({ orders }: { orders: Order[] }) {
   );
 }
 
+// Días entre hoy y una fecha ISO (negativo = ya pasó).
+function daysUntil(iso: string): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(iso);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - today.getTime()) / 86_400_000);
+}
+
+function ProgressBar({ value }: { value: number }) {
+  return (
+    <div className="h-2 w-full rounded-full bg-gray-100">
+      <div
+        className="h-2 rounded-full bg-blue-500"
+        style={{ width: `${Math.round(value * 100)}%` }}
+      />
+    </div>
+  );
+}
+
+// Panel de próximas llegadas, alimentado por la API de rastreo.
+function UpcomingArrivals({
+  orders,
+  trackings,
+}: {
+  orders: Order[];
+  trackings: Record<string, Tracking>;
+}) {
+  const arrivals = orders
+    .map((o) => ({ order: o, t: trackings[o.id] }))
+    .filter(
+      (x): x is { order: Order; t: Tracking } =>
+        !!x.t && !!x.t.estimatedArrival && x.t.progress < 1,
+    )
+    .sort((a, b) =>
+      a.t.estimatedArrival! < b.t.estimatedArrival! ? -1 : 1,
+    )
+    .slice(0, 6);
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-4">
+        <IoBoatOutline className="text-blue-600" size={20} />
+        <h2 className="font-semibold text-gray-800">Próximas llegadas a bodega</h2>
+      </div>
+      {arrivals.length === 0 ? (
+        <p className="text-sm text-gray-400">Sin envíos en tránsito.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {arrivals.map(({ order, t }) => {
+            const dias = daysUntil(t.estimatedArrival!);
+            const atrasado = dias < 0;
+            return (
+              <div
+                key={order.id}
+                className="grid grid-cols-12 items-center gap-3 rounded-lg border border-gray-100 px-3 py-2"
+              >
+                <div className="col-span-4 min-w-0">
+                  <p className="font-medium text-gray-900 truncate">{order.id}</p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {order.proveedor} · {t.currentStage}
+                  </p>
+                </div>
+                <div className="col-span-5">
+                  <ProgressBar value={t.progress} />
+                  <p className="mt-1 text-xs text-gray-400">
+                    {percent(t.progress)} · ETA{" "}
+                    {new Date(t.estimatedArrival!).toLocaleDateString("es-MX")}
+                  </p>
+                </div>
+                <div className="col-span-3 text-right">
+                  <span
+                    className={`text-xs font-medium ${
+                      atrasado ? "text-red-600" : "text-gray-600"
+                    }`}
+                  >
+                    {atrasado
+                      ? `Atrasado ${Math.abs(dias)} d`
+                      : dias === 0
+                      ? "Llega hoy"
+                      : `En ${dias} d`}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null);
+  const { dashboard: data, trackings, loading } = useOrders();
 
-  useEffect(() => {
-    fetchDashboardData().then(setData);
-  }, []);
-
-  if (!data) {
+  if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-gray-400">
         Cargando dashboard…
@@ -395,6 +482,9 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </Card>
         </div>
+
+        {/* Rastreo de envíos */}
+        <UpcomingArrivals orders={orders} trackings={trackings} />
 
         {/* Orders table */}
         <Card>

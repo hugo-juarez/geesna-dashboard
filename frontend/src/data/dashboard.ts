@@ -83,6 +83,24 @@ export interface DashboardData {
   alertasPago: Order[];
 }
 
+// --- Rastreo de envío (API externa, por Orden ID) ---
+// Modela los datos que devuelve el transportista: fecha estimada de llegada y
+// avance logístico. Es una fuente DISTINTA del avance/etapa que se captura a mano.
+export interface TrackingEvent {
+  etapa: string;
+  date: string | null; // ISO
+  completed: boolean;
+}
+
+export interface Tracking {
+  orderId: string;
+  estimatedArrival: string | null; // ETA a bodega (ISO)
+  progress: number; // 0..1
+  currentStage: Etapa;
+  lastUpdate: string; // ISO
+  events: TrackingEvent[];
+}
+
 // --- Colores compartidos (también los usa el dashboard) ---
 export const SEMAFORO_COLORS: Record<Semaforo, string> = {
   ROJO: "#ef4444",
@@ -122,7 +140,7 @@ export function pagoEnRiesgo(o: Order): boolean {
 }
 
 // --- Datos simulados (de las hojas FINE CREATIONS y CANPY LINA) ---
-const PROVIDERS: Provider[] = [
+export const PROVIDERS: Provider[] = [
   { nombre: "Fine Creations", pais: "China" },
   { nombre: "Lina", pais: "China" },
 ];
@@ -406,7 +424,7 @@ const ORDERS: Order[] = [
 ];
 
 // Deriva KPIs y agregados a partir de las órdenes (una sola fuente de verdad).
-function buildDashboard(orders: Order[], providers: Provider[]): DashboardData {
+export function buildDashboard(orders: Order[], providers: Provider[]): DashboardData {
   const montoTotal = orders.reduce((s, o) => s + o.monto, 0);
   const ordenesCompletas = orders.filter((o) => o.estado === "COMPLETA").length;
   const ordenesEnRojo = orders.filter((o) => o.semaforo === "ROJO").length;
@@ -490,13 +508,99 @@ function buildDashboard(orders: Order[], providers: Provider[]): DashboardData {
 }
 
 /**
- * Punto único de acceso a los datos del dashboard.
- * Hoy devuelve datos simulados; para conectar el backend reemplaza el cuerpo por:
- *   const res = await fetch("/api/dashboard");
+ * Carga inicial de órdenes (simulada). El store la llama una vez al montar y
+ * a partir de ahí mantiene el estado en memoria.
+ * Para conectar el backend reemplaza el cuerpo por:
+ *   const res = await fetch("/api/orders");
  *   return res.json();
  */
-export async function fetchDashboardData(): Promise<DashboardData> {
-  // Simula latencia de red.
+export async function fetchOrders(): Promise<Order[]> {
+  // Simula latencia de red y devuelve copias para no mutar la semilla.
   await new Promise((r) => setTimeout(r, 300));
-  return buildDashboard(ORDERS, PROVIDERS);
+  return ORDERS.map((o) => ({ ...o }));
+}
+
+function addDays(iso: string, n: number): string {
+  const d = new Date(iso);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function hashId(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/**
+ * API de rastreo por Orden ID. Hoy es una simulación determinista; cuando exista
+ * el endpoint real reemplaza el cuerpo por:
+ *   const res = await fetch(`/api/tracking/${orderId}`);
+ *   return res.ok ? res.json() : null;
+ *
+ * Para órdenes conocidas usa sus ETAs/etapa; para órdenes nuevas sintetiza un
+ * envío plausible a partir del ID (el transportista aún no las reporta a detalle).
+ */
+export async function fetchTracking(orderId: string): Promise<Tracking | null> {
+  await new Promise((r) => setTimeout(r, 250));
+
+  const seed = ORDERS.find((o) => o.id === orderId);
+  let etaBodega: string | null;
+  let etaPuertoMx: string | null;
+  let stageIndex: number; // 0..8
+
+  if (seed) {
+    stageIndex = etapaIndex(seed.etapaActual);
+    etaBodega = seed.etaBodega;
+    etaPuertoMx = seed.etaPuertoMx;
+  } else {
+    const h = hashId(orderId);
+    const today = new Date().toISOString().slice(0, 10);
+    etaBodega = addDays(today, 20 + (h % 50));
+    etaPuertoMx = addDays(etaBodega, -16);
+    stageIndex = 1 + (h % 4); // las órdenes nuevas suelen estar en etapas tempranas
+  }
+
+  const events: TrackingEvent[] = ETAPAS.map((et, i) => ({
+    etapa: et,
+    date:
+      et === "Llega puerto MX"
+        ? etaPuertoMx
+        : et === "Llega bodega"
+        ? etaBodega
+        : null,
+    completed: i < stageIndex,
+  }));
+
+  const currentStage: Etapa =
+    stageIndex === 0 ? "Sin iniciar" : ETAPAS[Math.min(stageIndex, ETAPAS.length) - 1];
+
+  return {
+    orderId,
+    estimatedArrival: etaBodega,
+    progress: stageIndex / ETAPAS.length,
+    currentStage,
+    lastUpdate: new Date().toISOString(),
+    events,
+  };
+}
+
+/** Plantilla de orden vacía para el formulario de registro. */
+export function blankOrder(): Order {
+  return {
+    id: "",
+    proveedor: PROVIDERS[0]?.nombre ?? "",
+    productoSku: "",
+    contenedor: "",
+    responsable: "",
+    monto: 0,
+    montoPagado: 0,
+    etaPuertoMx: null,
+    etaBodega: null,
+    etapaActual: "Sin iniciar",
+    estado: "EN GESTIÓN",
+    avance: 0,
+    semaforo: "GRIS",
+    diasSinMovimiento: null,
+  };
 }
