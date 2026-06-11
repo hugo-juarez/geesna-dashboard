@@ -7,6 +7,7 @@ import { CiLogout } from "react-icons/ci";
 
 import DashboardPage from "./pages/DashboardPage";
 import OrdersPage from "./pages/OrdersPage";
+import AlertsPage from "./pages/AlertsPage";
 import { OrdersProvider } from "./store/OrdersContext";
 
 type Page = "dashboard" | "orders" | "alerts" | "settings";
@@ -54,7 +55,8 @@ function App() {
         <div className="grow h-screen">
           {page === "dashboard" && <DashboardPage />}
           {page === "orders" && <OrdersPage />}
-          {(page === "alerts" || page === "settings") && (
+          {page === "alerts" && <AlertsPage />}
+          {page === "settings" && (
             <div className="flex h-full items-center justify-center text-gray-400">
               Próximamente…
             </div>
